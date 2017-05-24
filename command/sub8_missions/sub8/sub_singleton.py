@@ -10,6 +10,7 @@ from mil_msgs.msg import MoveToAction, PoseTwistStamped, RangeStamped
 from sub8 import pose_editor
 import mil_ros_tools
 from sub8_msgs.srv import VisionRequest, VisionRequestRequest, VisionRequest2DRequest, VisionRequest2D
+from mil_msgs.srv import SetGeometry, SetGeometryRequest
 from std_srvs.srv import SetBool, SetBoolRequest
 from nav_msgs.msg import Odometry
 
@@ -36,6 +37,7 @@ class VisionProxy(object):
         self._get_2d_service = nh.get_service_client(service_root + "/2D", VisionRequest2D)
         self._get_pose_service = nh.get_service_client(service_root + "/pose", VisionRequest)
         self._enable_service = nh.get_service_client(service_root + "/enable", SetBool)
+        self._set_geometry_service = nh.get_service_client(service_root + "/set_geometry", SetGeometry)
     
     def start(self):
         '''Allow user to start the vision processing backend
@@ -78,6 +80,13 @@ class VisionProxy(object):
         except Exception, e:
             print type(e)
         return pose
+
+    def set_geometry(self, polygon):
+        try:
+            res = self._set_geometry_service(SetGeometryRequest(model=polygon))
+        except(serviceclient.ServiceError):
+            return None
+        return res
 
     @classmethod
     def get_response_direction(self, vision_response):
@@ -319,7 +328,7 @@ class PoseSequenceCommander(object):
     @util.cancellableInlineCallbacks
     def go_to_sequence_eulers(self, positions, orientations, speed=0.2):
         '''Pass a list of positions and orientations (euler).
-        Each is realive to the sub's pose folloing the previous
+        Each is relative to the sub's pose following the previous
         pose command.
         '''
         for i in xrange(len(positions)):
@@ -333,7 +342,7 @@ class PoseSequenceCommander(object):
     @util.cancellableInlineCallbacks
     def go_to_sequence_quaternions(self, positions, orientations, speed=0.2):
         '''Pass a list of positions and orientations (quaternion).
-        Each is realive to the sub's pose folloing the previous
+        Each is relative to the sub's pose following the previous
         pose command.
         '''
         for i in xrange(len(positions)):
