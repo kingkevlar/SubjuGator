@@ -5,7 +5,8 @@ import serial
 import rospy
 import rospkg
 import rosparam
-from sub8_thruster_comm import thruster_comm_factory
+import sub8_thruster_comm as thrust_comm
+from sub8_thruster_comm import thruster_comm
 import mil_misc_tools.text_effects as te
 from mil_misc_tools.terminal_input import get_ch
 
@@ -26,7 +27,7 @@ def ports_from_layout(layout):
         try:
             port = port_info['port']
             thruster_names = port_info['thruster_names']
-            thruster_port = thruster_comm_factory(port_info, thruster_definitions, fake=False)
+            thruster_port = thrust_comm.thruster_comm_factory(port_info, thruster_definitions, fake=False)
 
             # Add the thrusters to the thruster dict
             for name in thruster_names:
@@ -53,7 +54,7 @@ names_from_motor_id = {0: 'FLH', 1: 'FLV', 2: 'FRH', 3: 'FRV',
                        4: 'BLH', 5: 'BLV', 6: 'BRH', 7: 'BRV'}
 usage_msg = \
     '''
-Welcome to David's thruster_spin_test tool.
+Welcome to David's ThrusterSpinner.
 \tInstructions:
 \t* press up or down to control the thrust commanded
 \t* press the thruster id to toggle spinning for that thruster (0-indexed, 8 for all)
@@ -101,10 +102,14 @@ def check_for_thrusters():
 
 
 def command_thrusters(timer_event):
+    ''' Sets the effort values for the motorcontrollers if comms are available '''
     thrusters_to_command = active_thrusters.copy()
     for motor_id in thrusters_to_command:
         name = names_from_motor_id[motor_id]
-        thruster_ports[name].command_thruster(name, thrust)
+        try:
+            thruster_ports[name].command_thruster(name, thrust)
+        except thrust_comm.UnavailableThrusterException as e:
+            fprint(e)
 
 timer = rospy.Timer(period=rospy.Duration(0.01), callback=command_thrusters)
 
