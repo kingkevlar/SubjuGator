@@ -19,7 +19,7 @@ from mil_vision_tools import RectFinder
 
 __author__ = "Kevin Allen"
 
-class OrangeRectangleFinder():
+class ColoredRectangleFinder():
     """
     Node which finds orange rectangular objects in image frame.
     This can be used for the path marker challenge and to detect
@@ -49,29 +49,30 @@ class OrangeRectangleFinder():
                                  [0, 0.3, 0],
                                  [0, 0, 0.3]], dtype=np.float)
     def __init__(self):
-        self.debug_gui = False
-        self.enabled = False
+        self.debug_gui = True
+        self.enabled = True
         self.cam = None
 
         # Constants from launch config file
         self.debug_ros = rospy.get_param("~debug_ros", True)
-        self.canny_low = rospy.get_param("~canny_low", 100)
-        self.canny_ratio = rospy.get_param("~canny_ratio", 3.0)
-        self.thresh_hue_high = rospy.get_param("~thresh_hue_high", 60)
-        self.thresh_saturation_low = rospy.get_param("~thresh_satuation_low", 100)
-        self.min_contour_area = rospy.get_param("~min_contour_area", 100)
+        self.canny_low = rospy.get_param("~canny_low", 50)
+        self.canny_ratio = rospy.get_param("~canny_ratio", 4.0)
+        self.thresh_hue_high = rospy.get_param("~thresh_hue_high", 80)
+        self.thresh_saturation_low = rospy.get_param("~thresh_satuation_low", 0)
+        self.min_contour_area = rospy.get_param("~min_contour_area", 500)
         self.epsilon_factor = rospy.get_param("~epsilon_factor", 0.02)
-        self.shape_match_thresh = rospy.get_param("~shape_match_thresh", 0.4)
+        self.shape_match_thresh = rospy.get_param("~shape_match_thresh", 0.7)
         self.min_found_count = rospy.get_param("~min_found_count", 10)
         self.timeout_seconds = rospy.get_param("~timeout_seconds", 2.0)
+        # self.lab_low = rospy.get_param("lab_low", [])
         # Default to scale model of path marker. Please use set_geometry service
         # to set to correct model of object.
-        length = rospy.get_param("~length", 1.2192)
-        width = rospy.get_param("~width", 0.1524)
+        length = rospy.get_param("~length", 0.9)
+        width = rospy.get_param("~width", 0.6)
         self.rect_model = RectFinder(length, width)
         self.do_3D = rospy.get_param("~do_3D", True)
-        camera = rospy.get_param("~marker_camera", "/camera/down/left/image_rect_color")
-
+        camera = rospy.get_param("~marker_camera", "/down_camera/image_rect_color")
+        # camera = rospy.get_param("~marker_camera", "/camera/down/left/image_rect_color")
         self.tf_listener = tf.TransformListener()
 
         # Create kalman filter to track 3d position and direction vector for marker in /map frame
@@ -126,7 +127,6 @@ class OrangeRectangleFinder():
         m.scale.z = 0.05
         m.pose.position = numpy_to_point(self.last3d[0])
         m.pose.orientation = numpy_to_quaternion(self.last3d[1])
-        m.color.r = 0.0
         m.color.g = 0.5
         m.color.b = 0.0
         m.color.r = 1.0
@@ -291,7 +291,9 @@ class OrangeRectangleFinder():
         if match > self.shape_match_thresh:
             return False
         # Checks that contour is 4 sided
-        corners = self.rect_model.get_corners(contour, epsilon_factor=self.epsilon_factor, debug_image=self.last_image)
+        corners = self.rect_model.get_corners(contour, debug_image=self.last_image, epsilon_range=(0.01, 0.1), epsilon_step=0.01)
+        # corners = self.rect_model.get_corners(contour, debug_image=self.last_image, epsilon_factor=0.02)
+        
         if corners is None:
             return False
         self.last2d = self.rect_model.get_pose_2D(corners)
@@ -308,33 +310,114 @@ class OrangeRectangleFinder():
         then runs canny on threshold images and returns canny's edges
         '''
         blur = cv2.blur(self.last_image, (5,5))
-        hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-        thresh = cv2.inRange(hsv, (0, self.thresh_saturation_low, 0), (self.thresh_hue_high, 255, 255))
-        return cv2.Canny(thresh, self.canny_low, self.canny_low*self.canny_ratio)
+        # blur = self.last_image
+        # cv2.imshow('blur before', blur)
+        # blur = cv2.medianBlur(self.last_image,5)
+
+        # cv2.imshow('blur after', blur)
+        hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2LAB)
+        lab_low = [70, 70, 200]
+        lab_high = [170, 170, 255]
+        lab_low = np.array(lab_low)
+        lab_high = np.array(lab_high)
+        # thresh = cv2.inRange(hsv, (70, 70, 200), (170, 170, 255))
+
+        thresh = cv2.inRange(hsv, lab_low, lab_high)
+        self.canny = cv2.Canny(hsv, 50, 200)
+        # self.canny = cv2.Canny(thresh, 50, 200)
+        cv2.imshow('threshed', self.canny)
+        return self.canny
+
+    def _in_bound(self, lines):
+        '''Checks that the center of a feature is in bound with a particular rectange'''
+        pass
+
+        # print 'english'
+
+    def _slopes(self, lines):
+        num_lines = len(lines)
+        m = np.zeros(num_lines)
+        for i in xrange(num_lines):
+            slope = (lines[i][0][3] - lines[i][0][1])/(lines[i][0][2] - lines[i][0][0])
+            if abs(slope) > 10:
+                slope = np.sign(slope)*10
+            m[i] = slope
+        return m
+
+    # connect lines that make
+
+    def _draw_boxes(self, lines):
+        # draw logical box sub units because on imilar x/y position and close to inverse
+        pass
+
+    def _draw_parallel(self, lines):
+        for i in lines: 
+            pass
+        return
+
+    def _close_boxes(self):
+        pass
+        return
+
+    def _check_area(self):
+        l1 = 0.9
+        w1 = 0.6
+
+        l2 = 0.6
+        w2 = 0.3
+        a1 = l1*w1
+        a2 = l2*w2
+
+        r = a2 / a1
+        # if r 
 
     def _img_cb(self, img):
         if not self.enabled or self.cam == None:
             return
         self.last_image = img
+        self.current_image = img
+        # print 'shape', img.shape
         edges = self._get_edges()
         _, contours, _ = cv2.findContours(edges,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-
         # Check if each contour is valid
+        area = []
+        idx = []
         for idx, c in enumerate(contours):
             if self._is_valid_contour(c):
+                # area.append(cv2.minAreaRect(c))
+                # idx.append(idx)
                 if self.debug_ros:
-                    cv2.drawContours(self.last_image, contours, idx, (0,255,0), 3)
+                    rect = cv2.minAreaRect(c)
+                    box = cv2.boxPoints(rect)
+                    box = np.int0(box)
+                    cv2.drawContours(self.last_image,[box], 0,(0,0,255),2)
+                    # cv2.drawContours(self.last_image, contours, idx, (0,255,0), 3)
+                    # bounding rectangle bum badump
                 break
             else:
                 if self.debug_ros:
-                    cv2.drawContours(self.last_image, contours, idx, (255,0,0), 3)
+                    pass
+                    # cv2.drawContours(self.last_image, contours, idx, (255,0,0), 3)
+        # print max(area)
+        # print 
         if self.debug_ros:
             self.debug_pub.publish(self.last_image)
         if self.debug_gui:
+            dst = self.canny
+            cdst = cv2.cvtColor(dst, cv2.COLOR_GRAY2BGR)
+            # cdst = dst
+            lines = cv2.HoughLinesP(dst, 1, np.pi/180.0, 40, np.array([]), 50, 10)
+            a,b,c = lines.shape
+            for i in range(len(lines)):
+                # print 'current line', lines[i][0]
+                cv2.line(cdst, (lines[i][0][0], lines[i][0][1]), (lines[i][0][2], lines[i][0][3]), (0, 0, 255), 3, cv2.LINE_AA)
+                # cv2.line(cdst, (0, 0), (0, 100), (255, 0, 0), 3, cv2.LINE_AA)
+            # cv2.imshow("hufflepuff", cdst)
+            # rect = cv2.minAreaRect()
             cv2.imshow("debug", self.last_image)
             cv2.waitKey(5)
 
 if __name__ == '__main__':
     rospy.init_node('orange_rectangle_finder')
-    OrangeRectangleFinder()
+    ColoredRectangleFinder()
     rospy.spin()
