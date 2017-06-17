@@ -78,7 +78,7 @@ class ColoredRectangleFinder():
         width = rospy.get_param("~width", 0.6)
         self.rect_model = RectFinder(length, width)
         self.do_3D = rospy.get_param("~do_3D", True)
-        #camera = rospy.get_param("~image_topic", "/camera/down/left/image_rect_color")
+        camera = rospy.get_param("~image_topic", "/camera/down/left/image_rect_color")
         # camera = rospy.get_param("~image_topic", "/down_camera/image_rect_color")
 
         self.tf_listener = tf.TransformListener()
@@ -329,9 +329,11 @@ class ColoredRectangleFinder():
             # cv2.imshow('colored lab', colored)
         thresh = cv2.inRange(colored, self.thresh_low, self.thresh_high)
         cv2.imshow('threshed', thresh)
-        kernel = np.ones((1,1),np.uint8)
-        erosion = cv2.erode(thresh,kernel,iterations = 1)
-        
+        ratio = 7
+        its = 1
+        kernel = np.ones((ratio, ratio),np.uint8)
+        erosion = cv2.erode(thresh,kernel,iterations = its)
+        cv2.imshow('erode', erosion)
         # return cv2.Canny(thresh, self.canny_low, self.canny_low * self.canny_ratio)
         return cv2.Canny(erosion, self.canny_low, self.canny_low * self.canny_ratio)
     def _img_cb(self, img):
