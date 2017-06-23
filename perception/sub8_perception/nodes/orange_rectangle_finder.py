@@ -20,9 +20,9 @@ __author__ = "Kevin Allen"
 assert cv2.__version__[0] == '3'
 
 
-class ColoredRectangleFinder():
+class OrangeRectangleFinder():
     """
-    Node which finds colored rectangular objects in image frame.
+    Node which finds orange rectangular objects in image frame.
     This can be used for the path marker challenge and to detect
     the lid of the bins challenge. The node estimates the 2d and 3d
     position/orientation of this object and returns this estimate when service is called.
@@ -31,7 +31,7 @@ class ColoredRectangleFinder():
 
     Finding the marker works as follows:
     * blur image
-    * threshold image mostly for highly saturated, colored/yellow/red objects
+    * threshold image mostly for highly saturated, orange/yellow/red objects
     * run canny edge detection on thresholded image
     * find contours on edge frame
     * filter contours to find those that may be contours by:
@@ -50,40 +50,34 @@ class ColoredRectangleFinder():
                                  [0, 0.3, 0],
                                  [0, 0, 0.3]], dtype=np.float)
 
-    def __init__(self):
-        self.debug_gui = True
-        self.enabled = True
-        self.cam = None
+# kevins stuff
+# 0, 100, 0
+# 60, 255, 255
 
-        self.areas = []
-        self.center_pos = []
-        self.contours = []
+    def __init__(self):
+        self.debug_gui = False
+        self.enabled = False
+        self.cam = None
 
         # Constants from launch config file
         self.debug_ros = rospy.get_param("~debug_ros", True)
         self.canny_low = rospy.get_param("~canny_low", 100)
-        self.canny_ratio = rospy.get_param("~canny_ratio", 4.0)
-        self.color_space = rospy.get_param("~color_space", "LAB") # LAB, BGR, HSV
-        self.thresh_low = rospy.get_param("~thresh_low", [175, 80,100])
-        self.thresh_high = rospy.get_param("~thresh_high", [255, 150, 150])
-        self.thresh_low = np.array(self.thresh_low)
-        self.thresh_high = np.array(self.thresh_high)
-        # self.thresh_hue_high = rospy.get_param("~thresh_hue_high", 60)
-        # self.thresh_saturation_low = rospy.get_param("~thresh_satuation_low", 100)
-        self.min_contour_area = rospy.get_param("~min_contour_area", 5000)
-        self.epsilon_range = rospy.get_param("~epsilon_range", [0.02, 0.1])
-        self.epsilon_step = rospy.get_param("~epsilon_step", 0.02)
-        self.shape_match_thresh = rospy.get_param("~shape_match_thresh", 0.9)
+        self.canny_ratio = rospy.get_param("~canny_ratio", 3.0)
+        self.thresh_hue_high = rospy.get_param("~thresh_hue_high", 60)
+        self.thresh_saturation_low = rospy.get_param("~thresh_satuation_low", 100)
+        self.min_contour_area = rospy.get_param("~min_contour_area", 100)
+        self.epsilon_range = rospy.get_param("~epsilon_range", (0.01, 0.1))
+        self.epsilon_step = rospy.get_param("~epsilon_step", 0.01)
+        self.shape_match_thresh = rospy.get_param("~shape_match_thresh", 0.4)
         self.min_found_count = rospy.get_param("~min_found_count", 10)
         self.timeout_seconds = rospy.get_param("~timeout_seconds", 2.0)
         # Default to scale model of path marker. Please use set_geometry service
         # to set to correct model of object.
-        length = rospy.get_param("~length", 0.9)
-        width = rospy.get_param("~width", 0.6)
+        length = rospy.get_param("~length", 1.2192)
+        width = rospy.get_param("~width", 0.1524)
         self.rect_model = RectFinder(length, width)
         self.do_3D = rospy.get_param("~do_3D", True)
-        # camera = rospy.get_param("~image_topic", "/camera/down/left/image_rect_color")
-        camera = rospy.get_param("~image_topic", "/down_camera/image_rect_color")
+        camera = rospy.get_param("~image_topic", "/camera/down/left/image_rect_color")
 
         self.tf_listener = tf.TransformListener()
 
@@ -129,7 +123,7 @@ class ColoredRectangleFinder():
         m = Marker()
         m.header.frame_id = '/map'
         m.header.stamp = self.last_found_time_3D
-        m.ns = "colored_rectangle"
+        m.ns = "orange_rectangle"
         m.id = 0
         m.type = 1
         m.action = 0
@@ -139,6 +133,7 @@ class ColoredRectangleFinder():
         m.scale.z = 0.05
         m.pose.position = numpy_to_point(self.last3d[0])
         m.pose.orientation = numpy_to_quaternion(self.last3d[1])
+        m.color.r = 0.0
         m.color.g = 0.5
         m.color.b = 0.0
         m.color.r = 1.0
@@ -296,7 +291,7 @@ class ColoredRectangleFinder():
     def _is_valid_contour(self, contour):
         '''
         Does various tests to filter out contours that are clearly not
-        a valid colored rectangle.
+        a valid orange rectangle.
         * run approx polygon, check that sides == 4
         * find ratio of length to width, check close to known ratio IRL
         '''
@@ -318,6 +313,7 @@ class ColoredRectangleFinder():
                 return False
         return True
 
+
     def _get_edges(self):
         '''
         Proccesses latest image to find edges by:
@@ -325,29 +321,9 @@ class ColoredRectangleFinder():
         then runs canny on threshold images and returns canny's edges
         '''
         blur = cv2.blur(self.last_image, (5, 5))
-        if self.color_space == 'HSV':
-            colored = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-        if self.color_space == 'LAB':
-            colored = cv2.cvtColor(blur, cv2.COLOR_BGR2LAB)
-        thresh = cv2.inRange(colored, self.thresh_low, self.thresh_high)
-        cv2.imshow('threshed', thresh)
-        # thresh = cv2.blur(thresh, (5,5))
-        ratio = 5
-        its = 1
-        kernel = np.ones((ratio, ratio),np.uint8)
-
-        # erosion = cv2.dilate(thresh,kernel,iterations = 1)
-        erosion = cv2.erode(thresh,kernel,iterations = 1)
-        cv2.imshow('erode', erosion)
-        # return cv2.Canny(thresh, self.canny_low, self.canny_low * self.canny_ratio)
-        edges = cv2.Canny(erosion, self.canny_low, self.canny_low * self.canny_ratio) 
-        cv2.imshow('edges', edges)
-        return edges
-
-    def maximum(self):
-        max_area = max(self.areas)
-        index = self.areas.index(max_area)
-        return self.contours[index]
+        hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+        thresh = cv2.inRange(hsv, (0, self.thresh_saturation_low, 0), (self.thresh_hue_high, 255, 255))
+        return cv2.Canny(thresh, self.canny_low, self.canny_low * self.canny_ratio)
 
     def _img_cb(self, img):
         if not self.enabled or self.cam is None:
@@ -356,29 +332,11 @@ class ColoredRectangleFinder():
         edges = self._get_edges()
         _, contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        rospy.loginfo('contour shape: %s', len(contours))
-        test = contours[0]
-        rospy.loginfo('test: %s', test.shape)
-        # contours[0].shape
-        rospy.loginfo('test area: %s', cv2.contourArea(test))
-
-        # self.areas = []
-        # self.center_pos = []
-        # self.contours = []
-
-
-
-
         # Check if each contour is valid
         for idx, c in enumerate(contours):
             if self._is_valid_contour(c):
                 if self.debug_ros:
-                    # cv2.drawContours(self.last_image, contours, idx, (100, 100, 100), 3)
-                    self.areas.append(cv2.contourArea(c))
-                    self.center_pos.append(self.last3d)
-                    self.contours.append(c)
-                    cv2.drawContours(self.last_image, self.maximum(), idx, (100, 100, 100), 3)
-
+                    cv2.drawContours(self.last_image, contours, idx, (0, 255, 0), 3)
                 break
             else:
                 if self.debug_ros:
@@ -390,6 +348,6 @@ class ColoredRectangleFinder():
             cv2.waitKey(5)
 
 if __name__ == '__main__':
-    rospy.init_node('colored_rectangle_finder')
-    ColoredRectangleFinder()
+    rospy.init_node('orange_rectangle_finder')
+    OrangeRectangleFinder()
     rospy.spin()
