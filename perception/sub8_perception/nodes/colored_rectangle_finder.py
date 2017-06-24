@@ -106,11 +106,18 @@ class ColoredRectangleFinder():
             self.service3D = rospy.Service('~pose', VisionRequest, self._vision_cb_3D)
         self.toggle = rospy.Service('~enable', SetBool, self._enable_cb)
 
-        self.image_sub = Image_Subscriber(camera, self._img_cb)
+        self.image_sub = Image_Subscriber(camera)
         self.camera_info = self.image_sub.wait_for_camera_info()
         assert self.camera_info is not None
         self.cam = PinholeCameraModel()
         self.cam.fromCameraInfo(self.camera_info)
+
+        last_img = None
+        while not rospy.is_shutdown():
+            now_img = self.image_sub.last_image
+            if now_img is last_img: continue
+            self._img_cb(now_img)
+            last_img = now_img
 
     def _set_geometry_cb(self, req):
         self.rect_model = RectFinder.from_polygon(req.model)
@@ -294,6 +301,7 @@ class ColoredRectangleFinder():
         return True
 
     def _is_valid_contour(self, contour):
+        # return True
         '''
         Does various tests to filter out contours that are clearly not
         a valid colored rectangle.
@@ -301,22 +309,27 @@ class ColoredRectangleFinder():
         * find ratio of length to width, check close to known ratio IRL
         '''
         if cv2.contourArea(contour) < self.min_contour_area:
-            return False
-        match = self.rect_model.verify_contour(contour)
-        if match > self.shape_match_thresh:
-            return False
+            print 'discarded due to area', cv2.contourArea(contour)
+            return False, (0, 0, 255)
+        mismatch = self.rect_model.verify_contour(contour)
+        if mismatch > self.shape_match_thresh:
+            print 'discarded due to thresh', mismatch, self.shape_match_thresh
+            return False, (255, 0, 0)
         # Checks that contour is 4 sided
         corners = self.rect_model.get_corners(contour, debug_image=self.last_image,
                                               epsilon_range=self.epsilon_range,
                                               epsilon_step=self.epsilon_step)
         if corners is None:
-            return False
+            print 'discarded due to get_corners'
+            return False, (255, 0, 255)
         self.last2d = self.rect_model.get_pose_2D(corners)
         self.last_found_time_2D = self.image_sub.last_image_time
         if self.do_3D:
             if not self._get_pose_3D(corners):
-                return False
-        return True
+                print 'discarded due to 3d stuff'
+                return False, (255, 255, 0)
+        print 'good', cv2.contourArea(contour), mismatch
+        return True, (0, 255, 0)
 
     def _get_edges(self):
         '''
@@ -340,7 +353,8 @@ class ColoredRectangleFinder():
         erosion = cv2.erode(thresh,kernel,iterations = 1)
         cv2.imshow('erode', erosion)
         # return cv2.Canny(thresh, self.canny_low, self.canny_low * self.canny_ratio)
-        edges = cv2.Canny(erosion, self.canny_low, self.canny_low * self.canny_ratio) 
+        #edges = cv2.Canny(erosion, self.canny_low, self.canny_low * self.canny_ratio) 
+        edges = erosion
         cv2.imshow('edges', edges)
         return edges
 
@@ -350,17 +364,21 @@ class ColoredRectangleFinder():
         return self.contours[index]
 
     def _img_cb(self, img):
+        img = img.copy()
+        import time
+        t1 = time.time()
+
         if not self.enabled or self.cam is None:
             return
         self.last_image = img
         edges = self._get_edges()
-        _, contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        _, contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        rospy.loginfo('contour shape: %s', len(contours))
-        test = contours[0]
-        rospy.loginfo('test: %s', test.shape)
+        # rospy.loginfo('contour shape: %s', len(contours))
+        # test = contours[0]
+        # rospy.loginfo('test: %s', test.shape)
         # contours[0].shape
-        rospy.loginfo('test area: %s', cv2.contourArea(test))
+        # rospy.loginfo('test area: %s', cv2.contourArea(test))
 
         # self.areas = []
         # self.center_pos = []
@@ -371,23 +389,26 @@ class ColoredRectangleFinder():
 
         # Check if each contour is valid
         for idx, c in enumerate(contours):
-            if self._is_valid_contour(c):
+            valid, color = self._is_valid_contour(c)
+            if valid:
                 if self.debug_ros:
-                    # cv2.drawContours(self.last_image, contours, idx, (100, 100, 100), 3)
-                    self.areas.append(cv2.contourArea(c))
-                    self.center_pos.append(self.last3d)
-                    self.contours.append(c)
-                    cv2.drawContours(self.last_image, self.maximum(), idx, (100, 100, 100), 3)
+                    cv2.drawContours(self.last_image, contours, idx, color, 3)
+                    # self.areas.append(cv2.contourArea(c))
+                    # self.center_pos.append(self.last3d)
+                    # self.contours.append(c)
+                    # cv2.drawContours(self.last_image, self.maximum(), idx, (100, 100, 100), 3)
 
-                break
+                # break
             else:
                 if self.debug_ros:
-                    cv2.drawContours(self.last_image, contours, idx, (255, 0, 0), 3)
+                    cv2.drawContours(self.last_image, contours, idx, color, 3)
         if self.debug_ros:
             self.debug_pub.publish(self.last_image)
         if self.debug_gui:
             cv2.imshow("debug", self.last_image)
             cv2.waitKey(5)
+        t2 = time.time()
+        print 'processing took', (t2-t1)/1e-3
 
 if __name__ == '__main__':
     rospy.init_node('colored_rectangle_finder')

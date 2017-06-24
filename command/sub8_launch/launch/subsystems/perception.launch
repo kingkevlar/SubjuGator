@@ -13,7 +13,7 @@
       <rosparam file="$(find sub8_launch)/config/buoy_finder.yaml" command="load"/>
     </node>
 
-    <node if="$(arg colored_rectangle)" pkg="sub8_perception" type="colored_rectangle_finder.py" name="colored_rectangle">
+    <node if="$(arg colored_rectangle)" pkg="sub8_perception" type="colored_rectangle_finder.py" name="colored_rectangle" output="screen">
       <rosparam file="$(find sub8_launch)/config/colored_rectangle_finder.yaml" command="load" />
     </node>
   </group>
