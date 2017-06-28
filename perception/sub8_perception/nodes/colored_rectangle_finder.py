@@ -344,24 +344,8 @@ class ColoredRectangleFinder():
             colored = cv2.cvtColor(blur, cv2.COLOR_BGR2LAB)
         thresh = cv2.inRange(colored, self.thresh_low, self.thresh_high)
         cv2.imshow('threshed', thresh)
-        # thresh = cv2.blur(thresh, (5,5))
-        ratio = 5
-        its = 1
-        kernel = np.ones((ratio, ratio),np.uint8)
 
-        # erosion = cv2.dilate(thresh,kernel,iterations = 1)
-        erosion = cv2.erode(thresh,kernel,iterations = 1)
-        cv2.imshow('erode', erosion)
-        # return cv2.Canny(thresh, self.canny_low, self.canny_low * self.canny_ratio)
-        #edges = cv2.Canny(erosion, self.canny_low, self.canny_low * self.canny_ratio) 
-        edges = erosion
-        cv2.imshow('edges', edges)
-        return edges
-
-    def maximum(self):
-        max_area = max(self.areas)
-        index = self.areas.index(max_area)
-        return self.contours[index]
+        return thresh
 
     def _img_cb(self, img):
         img = img.copy()
@@ -374,30 +358,23 @@ class ColoredRectangleFinder():
         edges = self._get_edges()
         _, contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # rospy.loginfo('contour shape: %s', len(contours))
-        # test = contours[0]
-        # rospy.loginfo('test: %s', test.shape)
-        # contours[0].shape
-        # rospy.loginfo('test area: %s', cv2.contourArea(test))
-
-        # self.areas = []
-        # self.center_pos = []
-        # self.contours = []
-
-
-
-
         # Check if each contour is valid
         for idx, c in enumerate(contours):
             valid, color = self._is_valid_contour(c)
             if valid:
                 if self.debug_ros:
                     cv2.drawContours(self.last_image, contours, idx, color, 3)
-                    # self.areas.append(cv2.contourArea(c))
-                    # self.center_pos.append(self.last3d)
-                    # self.contours.append(c)
-                    # cv2.drawContours(self.last_image, self.maximum(), idx, (100, 100, 100), 3)
+                    # print 'contour', contours[idx]
+                    # cv2.boundingRect(c)
+                    # x,y,w,h = cv2.boundingRect(c)
+                    # TODO: Verify orientation!
+                    (x, y), (w, h), angle = cv2.minAreaRect(c)
+                    rect = cv2.minAreaRect(c)
+                    mod_dims = (0.5*w, 0.666*h)
+                                        print type(int(x-0.25*w))
+                    (new_x, new_y) = (int(x-0.25*w), int(y-0.33*h))
 
+                    cv2.rectangle(self.last_image,(new_x, new_y),int(x+0.25*w),int(y+0.33*h),(0,255,0),2)
                 # break
             else:
                 if self.debug_ros:

@@ -12,10 +12,18 @@ thresh_hue_high: 60
 thresh_satuation_low: 100
 
 color_space : 'LAB'
-thresh_low : [175, 80,100]
+
+thresh_low : [175, 50,50]
 thresh_high : [255, 150, 150]
-#thresh_low : [70, 70, 200]
-#thresh_high : [170, 170, 255]
+
+
+#pretty good...
+# thresh_low : [170, 0,0]
+# thresh_high : [255, 255, 255]
+
+# thresh_low : [175, 80,100]
+# thresh_high : [255, 150, 150]
+
 # Minimum number of pixels in area of a contour to not be filtered
 min_contour_area: 1000
 
