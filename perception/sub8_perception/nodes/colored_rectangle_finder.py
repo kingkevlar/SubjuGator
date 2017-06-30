@@ -112,6 +112,7 @@ class ColoredRectangleFinder():
         self.cam = PinholeCameraModel()
         self.cam.fromCameraInfo(self.camera_info)
 
+        # Forrest Magic
         last_img = None
         while not rospy.is_shutdown():
             now_img = self.image_sub.last_image
@@ -371,10 +372,17 @@ class ColoredRectangleFinder():
                     (x, y), (w, h), angle = cv2.minAreaRect(c)
                     rect = cv2.minAreaRect(c)
                     mod_dims = (0.5*w, 0.666*h)
-                                        print type(int(x-0.25*w))
-                    (new_x, new_y) = (int(x-0.25*w), int(y-0.33*h))
 
-                    cv2.rectangle(self.last_image,(new_x, new_y),int(x+0.25*w),int(y+0.33*h),(0,255,0),2)
+                    # print type(int(x-0.25*w))
+                    # (new_x, new_y) = (int(x-0.25*w), int(y-0.33*h))
+
+                    # cv2.rectangle(self.last_image,(new_x, new_y),int(x+0.25*w),int(y+0.33*h),(0,255,0),2)
+                    # draw smaller rectangel
+                    # search smaller rectangle
+                    # find average color in rectangle
+                    # choose closest to orange as the winner
+                    # maybe abstrat away colored rectangle finder?
+
                 # break
             else:
                 if self.debug_ros:

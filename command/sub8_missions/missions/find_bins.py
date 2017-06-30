@@ -57,9 +57,39 @@ def run(sub):
                    start.left(2 * r),
                    start.backward(2 * r)]
     s = Searcher(sub, sub.vision_proxies.colored_rectangle.get_pose, pattern)
+
+    # DALE
+
+    # actuator = sub.actuators
+    # open gripper
+    # yield sub.actuators.gripper_open()
+
+    yield sub.actuators.gripper_open()
+    print_info("Opening Gripper")
+    # move into position to grab
+
+    # close gripper
+    yield sub.actuators.gripper_close()
+    print_info("Closing Gripper")
+
+
+
+    # HAVE BALL DROPPER GO OVER CENTER OF BIN
+
+    # drop ball
+    yield sub.actuators.drop_marker()
+    print_info("Dropping Marker")
+    # reload
+    # yield self.sub.set('dropper', False)
+    # drop ball
+    # yield self.sub.set('dropper', True)
+
+    # DALE # DALE # DALE
+
+
     resp = None
     print_info("RUNNING SEARCH PATTERN")
-    resp = yield s.start_search(loop=False, timeout=TIMEOUT_SECONDS, spotings_req=1)
+    resp = yield s.start_search(loop=False, timeout=TIMEOUT_SECONDS, spotings_req=5)
 
     if resp is None or not resp.found:
         print_bad("BINS NOT FOUND")
@@ -70,7 +100,7 @@ def run(sub):
 
     move = sub.move
     position = rosmsg_to_numpy(resp.pose.pose.position)
-    position[2] = move._pose.position[2]  # Leave Z alone!
+    position[2] = position[2] + 1.0  # Leave Z alone!
     orientation = rosmsg_to_numpy(resp.pose.pose.orientation)
 
     move = move.set_position(position).set_orientation(orientation).zero_roll_and_pitch()
@@ -81,7 +111,10 @@ def run(sub):
     if FACE_FORWARD and np.sign(odom_forward[0]) != np.sign(marker_forward[0]):
         move = move.yaw_right(np.pi)
 
+    # orient perpendicular:
+    move = move.yaw_right(0.5*np.pi)
     print_info("MOVING TO BIN AT {}".format(move._pose.position))
+
     yield move.go(speed=SPEED)
     print_good("BINED UP. MOVE FORWARD TO NEXT CHALLENGE!")
     yield sub.vision_proxies.colored_rectangle.stop()
