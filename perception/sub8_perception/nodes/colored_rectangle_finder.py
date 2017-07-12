@@ -55,7 +55,21 @@ class ColoredRectangleFinder():
         self.enabled = True
         self.cam = None
 
+        # Colors for checking valid external contours
+        self.blue = (255, 0, 0)
+        self.green = (0, 255, 0)
+        self.red = (0, 0, 255)
+        self.cyan = (255, 255, 0)
+        self.magenta = (255, 0, 255)
+
+        # Color for checking valid internal contours
+        self.yellow = (0, 255, 255)
+        self.white = (255, 255, 255)
+        self.black = (0, 0, 0)
+
+
         # Constants from launch config file
+        self.find_internal = rospy.get_param("~find_internal", True)
         self.debug_ros = rospy.get_param("~debug_ros", True)
         self.canny_low = rospy.get_param("~canny_low", 100)
         self.canny_ratio = rospy.get_param("~canny_ratio", 4.0)
@@ -298,7 +312,6 @@ class ColoredRectangleFinder():
         return True
 
     def _is_valid_contour(self, contour):
-        # return True
         '''
         Does various tests to filter out contours that are clearly not
         a valid colored rectangle.
@@ -307,26 +320,27 @@ class ColoredRectangleFinder():
         '''
         if cv2.contourArea(contour) < self.min_contour_area:
             # print 'discarded due to area', cv2.contourArea(contour)
-            return False, (0, 0, 255) # Red
+            return False, self.red
         mismatch = self.rect_model.verify_contour(contour)
         if mismatch > self.shape_match_thresh:
-            print 'discarded due to thresh', mismatch, self.shape_match_thresh
-            return False, (255, 0, 0) # Blue
+            # print 'discarded due to thresh', mismatch, self.shape_match_thresh
+            return False, self.blue
         # Checks that contour is 4 sided
         corners = self.rect_model.get_corners(contour, debug_image=self.last_image,
                                               epsilon_range=self.epsilon_range,
                                               epsilon_step=self.epsilon_step)
         if corners is None:
-            print 'discarded due to get_corners'
-            return False, (255, 0, 255) 
+            # print 'discarded due to get_corners'
+            return False, self.magenta
         self.last2d = self.rect_model.get_pose_2D(corners)
         self.last_found_time_2D = self.image_sub.last_image_time
         if self.do_3D:
             if not self._get_pose_3D(corners):
-                print 'discarded due to 3d stuff'
-                return False, (255, 255, 0)
-        # print 'good', cv2.contourArea(contour), mismatch
-        return True, (0, 255, 0)
+                # print 'discarded due to 3d stuff'
+                return False, self.cyan
+        # if mismatch > 0.2:
+            # print 'good', cv2.contourArea(contour), mismatch
+        return True, self.green
 
     def _get_edges(self):
         '''
@@ -342,134 +356,131 @@ class ColoredRectangleFinder():
         thresh = cv2.inRange(colored, self.thresh_low, self.thresh_high)
         return thresh
 
-    def closest_norm(self, color, masks, means):
+    def minimum_norm(self, center, features, means):
         '''
-        Among the given contours find the one closest to the provided color
-        in the HSV colorspace
+        Among the provided features find the proximity to a predefined center
+        
+        Center of feature may be geometric (ie. the 2D coordinates of the center of a contour),
+        or it may be proximity of a color to another
+
+        @param center   : base value to compare set of means against
+        @param features : the set of features who
+        @param means    : the corresponding set means of given set of features 
         '''
         distances = []
         for mean in means:
-            distance_to_color = np.linalg.norm(color-mean)
-            distances.append(distance_to_color)
-
+            distances.append(np.linalg.norm(center-mean))
         min_idx = distances.index(min(distances))
-        return masks[min_idx]
+        return features[min_idx]
 
     def center_contour(self, contour):
-        # contour_centers = []
-        # for contour in contours:
+        ''' Find the geometric center of a provided contour. '''
         center = cv2.moments(contour)
         cX = int(center["m10"] / center["m00"])
         cY = int(center["m01"] / center["m00"])
         return np.array([cX, cY])
 
     def image_mux_today(self, images):
+        ''' Plotting tool for debugging'''
         import os
-        labels = ['Original', 'Threshed', 'Inverted Mask', 'labels']
+        labels = ['Original', 'Threshed', 'Full Mask', None]
         size = (960, 1280)
         t = ImageMux(size=size, border_color=(0, 0, 255), border_thickness=1, shape=(2, 2),
-                 labels=labels, text_scale=1, text_color=(0,0,0))
+                 labels=labels, text_scale=1, text_color=(255, 255, 0))
         for i in xrange(len(images)):
             t[i] = np.array(images[i])
         cv2.imshow('Kapu', t.image)
 
-    def _img_cb(self, img):
-        self.i = 1
-        import time
-        t1 = time.time()
-        img = img.copy()
-        self.hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # self.lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        potential_areas = []
-        potential_contours = []
+    def find_contour_parameters(self, contours):
+        ''' return areas and geomtric centers of a given set of contours'''
+        areas = []
         contour_centers = []
-        print 'werk'
+
+        for c in contours:
+            areas.append(cv2.contourArea(c))
+            contour_centers.append([self.center_contour(c)])
+
+        return areas, contour_centers
+
+    def _img_cb(self, img):
+        potential_contours = []
 
         if not self.enabled or self.cam is None:
             return
         self.last_image = img
         edges = self._get_edges()
         _, contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        print 'eyyy'
         # Check if each contour is valid
+        # print 'start'
         for idx, c in enumerate(contours):
             valid, color = self._is_valid_contour(c)
             if valid:
+                potential_contours.append(c)
                 if self.debug_ros:
-                    potential_areas.append(cv2.contourArea(c))
-                    potential_contours.append(c)
-                    # contour_centers.append([self.center_contour(c)])
                     cv2.drawContours(self.last_image, contours, idx, color, 3)
             else:
                 if self.debug_ros:
                     cv2.drawContours(self.last_image, contours, idx, color, 3)
-        print 'heyyyy'
-        self.max_area = min(potential_areas) - 10
-        closest_color = np.array([0,0,0])
+
+        images = [self.last_image, edges]
+
         # Find Internal Contours
-        try:
-            print 'dale'
-            _, internal_contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)        
-            print 'sake'
-            masks, mean_saturations = self._tony(internal_contours, hierarchy[0])
-            print 'matte'
-            best_mask = self.closest_norm(closest_color[1], masks, mean_saturations)
-            # best_center_mask = self.center_contour(best_mask)
-            # krumsy_krop = self.closest_norm(best_center_mask, potential_contours, contour_centers)
-            x, y, w, h = cv2.boundingRect(best_mask)
-            print 'singe'
-            cv2.rectangle(self.last_image,(x,y),(x+w,y+h),(255,255,255),2) # White
-            print 'oeee'
-            # x1, y1, w1, h1 = cv2.boundingRect(krumsy_krop)
-            # cv2.rectangle(self.last_image,(x1,y1),(x1+w1,y1+h1),(255,255,255),2) # White
-
-
-            images = [self.last_image, edges, self.blank_mask]
-            print 'areaaaa'
-        except ValueError as e:
-            rospy.logerr(e)
-            images = [self.last_image, edges]
-
-        print 'pwease'
-
+        if self.find_internal:
+            try:
+                self.hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+                areas, contour_centers = self.find_contour_parameters(potential_contours)
+                self.max_internal_area = min(areas) - 10
+                closest_color = np.array([20,0,0])                
+                _, internal_contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+                masks, mean_saturations, full_mask = self._get_internal_masks_and_saturations(internal_contours, hierarchy[0])
+                best_mask = self.minimum_norm(closest_color[:1], masks, mean_saturations)
+                best_center_mask = self.center_contour(best_mask)
+                contour_with_lid = self.minimum_norm(best_center_mask, potential_contours, contour_centers)
+                self._is_valid_contour(contour_with_lid)
+                x, y, w, h = cv2.boundingRect(best_mask)
+                cv2.rectangle(self.last_image,(x,y),(x+w,y+h),self.black,2)
+                x1, y1, w1, h1 = cv2.boundingRect(contour_with_lid)
+                cv2.rectangle(self.last_image,(x1,y1),(x1+w1,y1+h1), self.black, 2)
+                images = [self.last_image, edges, full_mask]
+            except ValueError as e:
+                rospy.logerr(e)
 
         if self.debug_ros:
-            self.debug_pub.publish(self.last_image)
-            print 'again'
-        if self.debug_gui:
-            print 'stoop'
-            self.image_mux_today(images)
-            print 'fix yourself'
-            cv2.waitKey(5)
-        t2 = time.time()
-        mils = (t2-t1)/1e-3
-        if mils > 50:
-            print 'processing took: ', mils
+            # self.debug_pub.publish(self.last_image)
 
-    def _tony(self, contours, hierarchy):
+            self.debug_pub.publish(self.hsv)
+        if self.debug_gui:
+            self.image_mux_today(images)
+            cv2.waitKey(5)
+
+    def _get_internal_masks_and_saturations(self, contours, hierarchy):
         '''
         Among the white bins, find the masks for the contours 
-        that can be used to search for the average color
+        and return their corresponding saturation values. 
         '''
         possible_lids = []
         masks = []
-        self.blank_mask = np.zeros(self.last_image.shape[:2], np.uint8)
+        mask = np.zeros(self.last_image.shape[:2], np.uint8)
+        full_mask = mask.copy()
         mean_saturations = []
         for idx, component in enumerate(zip(contours, hierarchy)):
             currentContour = component[0]
             currentHierarchy = component[1]
             x,y,w,h = cv2.boundingRect(currentContour)
-            if  2000 <= cv2.contourArea(currentContour) < self.max_area:
-                if currentHierarchy[0] < 0:
-                    cv2.drawContours(self.last_image, contours, idx, (255,0,255), 3) # Purple
-                    cv2.drawContours(self.blank_mask, contours, idx, (255,255,255), cv2.FILLED)                    
-                    mean_val = cv2.mean(self.hsv, mask=self.blank_mask)
-                    mean_saturations.append(mean_val[1])
-                    masks.append(self.blank_mask)
-                    self.blank_mask = np.zeros(self.last_image.shape[:2], np.uint8)
-        return (masks, mean_saturations)
-
-
+            # print 'area', cv2.contourArea(currentContour)
+            if  500 <= cv2.contourArea(currentContour) < self.max_internal_area:
+                # if currentHierarchy[0] < 0: # inner most
+                # if currentHierarchy[1] != -1:
+                # print 'area', cv2.contourArea(currentContour)
+                if True:
+                    cv2.drawContours(self.last_image, contours, idx, self.yellow, 3)
+                    cv2.drawContours(mask, contours, idx, self.white, cv2.FILLED)             
+                    mean_val = cv2.mean(self.hsv, mask=mask)
+                    mean_saturations.append(mean_val[:1])
+                    masks.append(mask)
+                    full_mask = full_mask + mask
+                    mask = np.zeros(self.last_image.shape[:2], np.uint8)
+        return masks, mean_saturations, full_mask
 
 if __name__ == '__main__':
     rospy.init_node('colored_rectangle_finder')
