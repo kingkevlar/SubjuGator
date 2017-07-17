@@ -339,7 +339,7 @@ class ColoredRectangleFinder():
                 # print 'discarded due to 3d stuff'
                 return False, self.cyan
         # if mismatch > 0.2:
-            # print 'good', cv2.contourArea(contour), mismatch
+            print 'good', cv2.contourArea(contour), mismatch
         return True, self.green
 
     def _get_edges(self):
@@ -410,6 +410,8 @@ class ColoredRectangleFinder():
         self.last_image = img
         edges = self._get_edges()
         _, contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # _, contours, _ = cv2.findContours(self.last_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         # Check if each contour is valid
         # print 'start'
         for idx, c in enumerate(contours):

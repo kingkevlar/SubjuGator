@@ -13,7 +13,7 @@ thresh_satuation_low: 100
 
 color_space : 'LAB'
 
-thresh_low : [155, 50,50]
+thresh_low : [150, 50,50]
 thresh_high : [255, 150, 150]
 
 
@@ -25,7 +25,7 @@ thresh_high : [255, 150, 150]
 # thresh_high : [255, 150, 150]
 
 # Minimum number of pixels in area of a contour to not be filtered
-min_contour_area: 1000
+min_contour_area: 7000
 
 # widen range or lower step if having trouble approximating 4 sided polygon in contours
 epsilon_range: [0.02, 0.1]
